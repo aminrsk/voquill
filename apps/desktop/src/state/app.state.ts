@@ -13,6 +13,8 @@ import {
   OidcProvider,
   PairedRemoteDevice,
   RemoteReceiverStatus,
+  Tenant,
+  TenantRole,
   Term,
   Tone,
   ToolInfo,
@@ -29,6 +31,7 @@ import { PermissionMap } from "../types/permission.types";
 import { AgentRunState } from "./agent.state";
 import { ChatState, INITIAL_CHAT_STATE } from "./chat.state";
 import { DictionaryState, INITIAL_DICTIONARY_STATE } from "./dictionary.state";
+import { INITIAL_LOCAL_STATE, LocalState } from "./local.state";
 import { INITIAL_LOGIN_STATE, LoginState } from "./login.state";
 import {
   INITIAL_ONBOARDING_STATE,
@@ -46,7 +49,6 @@ import {
   INITIAL_TRANSCRIPTIONS_STATE,
   TranscriptionsState,
 } from "./transcriptions.state";
-import { INITIAL_LOCAL_STATE, LocalState } from "./local.state";
 import { INITIAL_UPDATER_STATE, UpdaterState } from "./updater.state";
 
 export type SnackbarMode = "info" | "success" | "error";
@@ -71,6 +73,12 @@ export type AssistantInputMode = "voice" | "type";
 
 export type PriceValue = HandlerOutput<"stripe/getPrices">["prices"];
 
+export type MyTenantMembership = {
+  tenant: Tenant;
+  role: TenantRole;
+  hasSeat: boolean;
+};
+
 export type AppState = {
   initialized: boolean;
   auth: Nullable<AuthUser>;
@@ -87,6 +95,9 @@ export type AppState = {
 
   memberById: Record<string, Member>;
   userById: Record<string, User>;
+  /** First tenant the signed-in user belongs to, with their role and seat
+   * status on it. Null if the user has no tenants. */
+  myTenant: Nullable<MyTenantMembership>;
   termById: Record<string, Term>;
   appTargetById: Record<string, AppTarget>;
   pairedRemoteDeviceById: Record<string, PairedRemoteDevice>;
@@ -149,6 +160,7 @@ export const INITIAL_APP_STATE: AppState = {
   oidcProviders: [],
   memberById: {},
   userById: {},
+  myTenant: null,
   termById: {},
   appTargetById: {},
   pairedRemoteDeviceById: {},

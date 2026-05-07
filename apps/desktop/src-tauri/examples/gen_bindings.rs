@@ -83,6 +83,7 @@ fn main() {
         write_accessibility_fields,
         focus_accessibility_field,
         read_accessibility_field_values,
+        resolve_app_pids,
         check_focused_paste_target,
         read_enterprise_target,
         run_terminal_command,
@@ -109,6 +110,7 @@ fn main() {
         auth_mint_custom_token,
         auth_sign_out,
         auth_is_signed_in,
+        return_to_shell,
     ]);
 
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));

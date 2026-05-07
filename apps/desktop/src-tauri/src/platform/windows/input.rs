@@ -1,4 +1,7 @@
-use std::{env, mem, thread, time::Duration};
+use std::{
+    env, mem, thread,
+    time::{Duration, Instant},
+};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBDINPUT,
@@ -19,6 +22,7 @@ pub struct WindowTargetInfo {
 pub(crate) fn paste_text_into_focused_field(
     text: &str,
     keybind: Option<&str>,
+    skip_clipboard_restore: bool,
 ) -> Result<(), String> {
     if text.trim().is_empty() {
         return Ok(());
@@ -31,7 +35,7 @@ pub(crate) fn paste_text_into_focused_field(
         target.chars().count()
     );
 
-    paste_via_clipboard(target, keybind).or_else(|err| {
+    paste_via_clipboard(target, keybind, skip_clipboard_restore).or_else(|err| {
         log::warn!("Clipboard paste failed ({err}), falling back to simulated typing");
         use enigo::{Enigo, KeyboardControllable};
         let mut enigo = Enigo::new();
@@ -303,7 +307,11 @@ fn send_paste_keys(keybind: Option<&str>) {
     }
 }
 
-fn paste_via_clipboard(text: &str, keybind: Option<&str>) -> Result<(), String> {
+fn paste_via_clipboard(
+    text: &str,
+    keybind: Option<&str>,
+    skip_clipboard_restore: bool,
+) -> Result<(), String> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|err| format!("clipboard unavailable: {err}"))?;
     let previous = crate::platform::SavedClipboard::save(&mut clipboard);
@@ -311,17 +319,37 @@ fn paste_via_clipboard(text: &str, keybind: Option<&str>) -> Result<(), String> 
         .set_text(text.to_string())
         .map_err(|err| format!("failed to store clipboard text: {err}"))?;
 
-    thread::sleep(Duration::from_millis(50));
+    // Windows' clipboard-change broadcast reaches other processes via the
+    // message pump, not synchronously. If we fire Ctrl+V before the target
+    // app has observed the new contents, paste fetches the previous value —
+    // which during batched writes leaks earlier fields' values into later
+    // ones. Poll the clipboard until readback matches what we wrote.
+    if !text.is_empty() {
+        let deadline = Instant::now() + Duration::from_millis(1000);
+        loop {
+            match clipboard.get_text() {
+                Ok(ref read) if read == text => break,
+                _ => {
+                    if Instant::now() >= deadline {
+                        return Err("clipboard verification timed out".into());
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
+        }
+    }
 
     release_modifier_keys();
     thread::sleep(Duration::from_millis(30));
 
     send_paste_keys(keybind);
 
-    thread::spawn(move || {
-        thread::sleep(Duration::from_millis(800));
-        previous.restore();
-    });
+    if !skip_clipboard_restore {
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(800));
+            previous.restore();
+        });
+    }
 
     Ok(())
 }
