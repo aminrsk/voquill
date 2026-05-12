@@ -4,6 +4,7 @@ use std::{thread, time::Duration};
 
 use super::accessibility;
 
+const KEY_A: CGKeyCode = 0;
 const KEY_C: CGKeyCode = 8;
 const KEY_SPACE: CGKeyCode = 49;
 const KEY_V: CGKeyCode = 9;
@@ -11,6 +12,7 @@ const KEY_V: CGKeyCode = 9;
 pub(crate) fn paste_text_into_focused_field(
     text: &str,
     _keybind: Option<&str>,
+    skip_clipboard_restore: bool,
 ) -> Result<(), String> {
     if text.trim().is_empty() {
         return Ok(());
@@ -20,12 +22,12 @@ pub(crate) fn paste_text_into_focused_field(
         Ok(()) => Ok(()),
         Err(err) => {
             log::warn!("Accessibility insert failed ({err}), falling back to clipboard paste");
-            paste_via_clipboard(text)
+            paste_via_clipboard(text, skip_clipboard_restore)
         }
     }
 }
 
-fn paste_via_clipboard(text: &str) -> Result<(), String> {
+fn paste_via_clipboard(text: &str, skip_clipboard_restore: bool) -> Result<(), String> {
     let trimmed_text = text.trim_end_matches(' ');
     let trailing_spaces = text.len() - trimmed_text.len();
 
@@ -40,10 +42,12 @@ fn paste_via_clipboard(text: &str) -> Result<(), String> {
         thread::sleep(Duration::from_millis(50));
         simulate_cmd_v()?;
 
-        thread::spawn(move || {
-            thread::sleep(Duration::from_millis(800));
-            previous.restore();
-        });
+        if !skip_clipboard_restore {
+            thread::spawn(move || {
+                thread::sleep(Duration::from_millis(800));
+                previous.restore();
+            });
+        }
     }
 
     for _ in 0..trailing_spaces {
@@ -77,8 +81,12 @@ pub(crate) fn simulate_cmd_c() -> Result<(), String> {
     Ok(())
 }
 
-fn simulate_cmd_v() -> Result<(), String> {
+pub(crate) fn simulate_cmd_v() -> Result<(), String> {
     simulate_keypress(KEY_V, CGEventFlags::CGEventFlagCommand)
+}
+
+pub(crate) fn simulate_cmd_a() -> Result<(), String> {
+    simulate_keypress(KEY_A, CGEventFlags::CGEventFlagCommand)
 }
 
 fn simulate_keypress(key_code: CGKeyCode, flags: CGEventFlags) -> Result<(), String> {

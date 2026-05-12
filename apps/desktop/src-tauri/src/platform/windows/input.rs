@@ -22,6 +22,7 @@ pub struct WindowTargetInfo {
 pub(crate) fn paste_text_into_focused_field(
     text: &str,
     keybind: Option<&str>,
+    skip_clipboard_restore: bool,
 ) -> Result<(), String> {
     if text.trim().is_empty() {
         return Ok(());
@@ -34,7 +35,7 @@ pub(crate) fn paste_text_into_focused_field(
         target.chars().count()
     );
 
-    paste_via_clipboard(target, keybind).or_else(|err| {
+    paste_via_clipboard(target, keybind, skip_clipboard_restore).or_else(|err| {
         log::warn!("Clipboard paste failed ({err}), falling back to simulated typing");
         use enigo::{Enigo, KeyboardControllable};
         let mut enigo = Enigo::new();
@@ -306,7 +307,11 @@ fn send_paste_keys(keybind: Option<&str>) {
     }
 }
 
-fn paste_via_clipboard(text: &str, keybind: Option<&str>) -> Result<(), String> {
+fn paste_via_clipboard(
+    text: &str,
+    keybind: Option<&str>,
+    skip_clipboard_restore: bool,
+) -> Result<(), String> {
     let mut clipboard =
         arboard::Clipboard::new().map_err(|err| format!("clipboard unavailable: {err}"))?;
     let previous = crate::platform::SavedClipboard::save(&mut clipboard);
@@ -339,10 +344,12 @@ fn paste_via_clipboard(text: &str, keybind: Option<&str>) -> Result<(), String> 
 
     send_paste_keys(keybind);
 
-    thread::spawn(move || {
-        thread::sleep(Duration::from_millis(800));
-        previous.restore();
-    });
+    if !skip_clipboard_restore {
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(800));
+            previous.restore();
+        });
+    }
 
     Ok(())
 }

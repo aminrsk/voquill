@@ -69,6 +69,29 @@ pub struct ElementFingerprint {
     pub name: Option<String>,
     pub framework_id: Option<String>,
     pub child_index: usize,
+    /// macOS only. AXRole of the element at this depth (e.g. "AXTextArea").
+    /// Required match at resolve time when present.
+    #[serde(default)]
+    pub ax_role: Option<String>,
+    /// macOS only. AXSubrole if any (e.g. "AXSecureTextField").
+    #[serde(default)]
+    pub ax_subrole: Option<String>,
+    /// macOS only. AXTitle.
+    #[serde(default)]
+    pub ax_title: Option<String>,
+    /// macOS only. AXDescription / AXHelp text.
+    #[serde(default)]
+    pub ax_description: Option<String>,
+    /// macOS only. AXIdentifier (developer-assigned) when present — strongest
+    /// stable signal and a hard disqualifier when mismatched.
+    #[serde(default)]
+    pub ax_identifier: Option<String>,
+    /// Free-form escape hatch for future fingerprint metadata. Persisted
+    /// round-trip through the frontend / Firestore so we can extend
+    /// fingerprinting later without bumping the type schema. Convention:
+    /// JSON string keyed by feature name when there's something to store.
+    #[serde(default)]
+    pub details: Option<String>,
 }
 
 /// Canonical string identifier for a JAB element at one level of the tree.
@@ -80,6 +103,42 @@ pub struct JabElementId {
     pub name: Option<String>,
     pub role: Option<String>,
     pub index_in_parent: usize,
+}
+
+/// Stable, relaunch-surviving identifier for a host application. PIDs change
+/// every launch; these fields do not. Populated by `get_focused_field_info`
+/// at capture time, then passed to `resolve_app_pids` on subsequent sessions
+/// to re-resolve the current PID.
+///
+/// Every field is optional because availability is platform-dependent and
+/// bindings captured on one OS must still deserialize on another.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppIdentity {
+    /// Windows: full absolute path to the process executable (e.g.
+    /// `C:\Program Files\LigoLab\LigoLab.exe`). Case-insensitive match.
+    #[serde(default)]
+    pub exe_path: Option<String>,
+    /// Windows: basename of `exe_path` (e.g. `LigoLab.exe`). Lossy fallback
+    /// used when the install directory differs across machines.
+    #[serde(default)]
+    pub exe_name: Option<String>,
+    /// macOS: `CFBundleIdentifier` of the application (e.g.
+    /// `com.ligolab.client`). The canonical stable id on that platform.
+    #[serde(default)]
+    pub bundle_id: Option<String>,
+}
+
+/// A currently-running process that matches an `AppIdentity`. Returned from
+/// `resolve_app_pids`; the caller (frontend) picks one, typically by
+/// matching `window_title` against the title recorded with the binding.
+#[derive(serde::Serialize, Clone, Debug, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct AppProcessMatch {
+    pub pid: i32,
+    pub exe_path: Option<String>,
+    pub app_name: Option<String>,
+    pub window_title: Option<String>,
 }
 
 #[derive(serde::Serialize, specta::Type)]
@@ -104,6 +163,16 @@ pub struct AccessibilityFieldInfo {
     /// When present, resolvers prefer it over `element_index_path`.
     #[serde(default)]
     pub jab_string_path: Vec<JabElementId>,
+    /// Stable identity (exe path, bundle id, ...) captured at bind time.
+    /// Persisting this alongside the PID lets callers re-resolve the PID
+    /// after the host app restarts via `resolve_app_pids`.
+    #[serde(default)]
+    pub app_identity: Option<AppIdentity>,
+    /// Free-form escape hatch for future field metadata. See the matching
+    /// field on `ElementFingerprint` — same purpose: lets us extend the
+    /// payload later without shipping a new schema version.
+    #[serde(default)]
+    pub details: Option<String>,
 }
 
 #[derive(serde::Deserialize, specta::Type)]
@@ -1471,7 +1540,11 @@ pub fn copy_to_clipboard(text: String) -> Result<(), String> {
 
 #[tauri::command]
 #[specta::specta]
-pub async fn paste(text: String, keybind: Option<String>) -> Result<PasteOutcome, String> {
+pub async fn paste(
+    text: String,
+    keybind: Option<String>,
+    skip_clipboard_restore: Option<bool>,
+) -> Result<PasteOutcome, String> {
     // Probe the focused target first. If it clearly can't accept text, write
     // the transcript to the clipboard and skip the paste keystroke entirely —
     // that avoids the race where paste's delayed clipboard-restore overwrites
@@ -1512,8 +1585,9 @@ pub async fn paste(text: String, keybind: Option<String>) -> Result<PasteOutcome
         };
     }
 
+    let skip_clipboard_restore = skip_clipboard_restore.unwrap_or(false);
     let join_result = tauri::async_runtime::spawn_blocking(move || {
-        platform_paste_text(&text, keybind.as_deref())
+        platform_paste_text(&text, keybind.as_deref(), skip_clipboard_restore)
     })
     .await;
 
@@ -1913,6 +1987,26 @@ pub async fn read_accessibility_field_values(
     .map_err(|err| err.to_string())
 }
 
+/// Enumerate currently-running processes matching `identity`. Returns every
+/// candidate so the caller (which knows the binding's `windowTitle` and other
+/// heuristics) can disambiguate when multiple instances are running. Returns
+/// an empty vec when the app is not running.
+#[tauri::command]
+#[specta::specta]
+pub async fn resolve_app_pids(
+    identity: AppIdentity,
+) -> Result<Vec<AppProcessMatch>, String> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        tauri::async_runtime::spawn_blocking(move || {
+            crate::platform::accessibility::resolve_app_pids(&identity)
+        }),
+    )
+    .await
+    .map_err(|_| "resolve_app_pids timed out".to_string())?
+    .map_err(|err| err.to_string())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn check_focused_paste_target() -> Result<PasteTargetState, String> {
@@ -2214,4 +2308,115 @@ pub async fn auth_is_signed_in(
         .is_signed_in()
         .await
         .map_err(|err| err.to_user_string())
+}
+
+#[derive(serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateFloatingWindowArgs {
+    pub url: String,
+    pub title: Option<String>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub min_width: Option<f64>,
+    pub min_height: Option<f64>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub decorations: Option<bool>,
+    pub transparent: Option<bool>,
+    pub resizable: Option<bool>,
+    pub focused: Option<bool>,
+}
+
+#[derive(serde::Serialize, specta::Type, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FloatingWindowInfo {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+}
+
+/// Opens a draggable, always-on-top webview window pointed at the given URL
+/// and returns a stable id that can be used to destroy it later. The window
+/// renders any URL the platform webview can load (the same set the main
+/// window can load). The window is independent of the main app window — it
+/// will not be backgrounded behind other windows because of the always-on-top
+/// flag.
+#[tauri::command]
+#[specta::specta]
+pub async fn floating_window_create(
+    args: CreateFloatingWindowArgs,
+    app: AppHandle,
+    state: State<'_, crate::state::FloatingWindowState>,
+) -> Result<FloatingWindowInfo, String> {
+    let parsed_url = url::Url::parse(&args.url).map_err(|err| err.to_string())?;
+    let label = state.next_label();
+    let title = args.title.clone().unwrap_or_else(|| "Voquill".to_string());
+
+    let mut builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        label.clone(),
+        tauri::WebviewUrl::External(parsed_url),
+    )
+    .title(title.clone())
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .decorations(args.decorations.unwrap_or(true))
+    .resizable(args.resizable.unwrap_or(true))
+    .focused(args.focused.unwrap_or(false));
+
+    if args.transparent.unwrap_or(false) {
+        builder = builder.transparent(true);
+    }
+
+    if let (Some(w), Some(h)) = (args.width, args.height) {
+        builder = builder.inner_size(w, h);
+    }
+    if let (Some(min_w), Some(min_h)) = (args.min_width, args.min_height) {
+        builder = builder.min_inner_size(min_w, min_h);
+    }
+    if let (Some(x), Some(y)) = (args.x, args.y) {
+        builder = builder.position(x, y);
+    }
+
+    builder.build().map_err(|err| err.to_string())?;
+
+    Ok(FloatingWindowInfo {
+        id: label,
+        url: args.url,
+        title,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn floating_window_destroy(id: String, app: AppHandle) -> Result<(), String> {
+    if !id.starts_with(crate::state::FLOATING_WINDOW_LABEL_PREFIX) {
+        return Err(format!("invalid floating window id: {id}"));
+    }
+    match app.get_webview_window(&id) {
+        Some(window) => window.close().map_err(|err| err.to_string()),
+        None => Ok(()),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn floating_window_list(app: AppHandle) -> Result<Vec<FloatingWindowInfo>, String> {
+    let mut out = Vec::new();
+    for (label, window) in app.webview_windows() {
+        if !label.starts_with(crate::state::FLOATING_WINDOW_LABEL_PREFIX) {
+            continue;
+        }
+        let title = window.title().unwrap_or_default();
+        let url = window
+            .url()
+            .map(|u| u.to_string())
+            .unwrap_or_else(|_| String::new());
+        out.push(FloatingWindowInfo {
+            id: label,
+            url,
+            title,
+        });
+    }
+    Ok(out)
 }

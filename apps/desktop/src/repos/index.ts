@@ -15,17 +15,17 @@ import {
 } from "../utils/user.utils";
 import { BaseApiKeyRepo, LocalApiKeyRepo } from "./api-key.repo";
 import { BaseAppTargetRepo, LocalAppTargetRepo } from "./app-target.repo";
-import { BaseChatMessageRepo, LocalChatMessageRepo } from "./chat-message.repo";
-import {
-  BaseConversationRepo,
-  LocalConversationRepo,
-} from "./conversation.repo";
 import { BaseAuthRepo, CloudAuthRepo, EnterpriseAuthRepo } from "./auth.repo";
+import { BaseChatMessageRepo, LocalChatMessageRepo } from "./chat-message.repo";
 import {
   BaseConfigRepo,
   CloudConfigRepo,
   EnterpriseConfigRepo,
 } from "./config.repo";
+import {
+  BaseConversationRepo,
+  LocalConversationRepo,
+} from "./conversation.repo";
 import { EnterpriseRepo } from "./enterprise.repo";
 import {
   AzureOpenAIGenerateTextRepo,
@@ -67,7 +67,6 @@ import {
   SpeachesModelProviderRepo,
   XaiModelProviderRepo,
 } from "./model-provider.repo";
-export { BaseModelProviderRepo } from "./model-provider.repo";
 import {
   BasePairedRemoteDeviceRepo,
   LocalPairedRemoteDeviceRepo,
@@ -82,6 +81,7 @@ import {
 } from "./remote-receiver.repo";
 import { BaseStorageRepo, LocalStorageRepo } from "./storage.repo";
 import { BaseStripeRepo, CloudStripeRepo } from "./stripe.repo";
+import { BaseTenantRepo, CloudTenantRepo } from "./tenant.repo";
 import {
   BaseTermRepo,
   CloudTermRepo,
@@ -94,6 +94,7 @@ import {
   EnterpriseToneRepo,
   LocalToneRepo,
 } from "./tone.repo";
+import { ToolRepo } from "./tool.repo";
 import {
   AldeaTranscribeAudioRepo,
   AzureTranscribeAudioRepo,
@@ -109,7 +110,6 @@ import {
   SpeachesTranscribeAudioRepo,
   XaiTranscribeAudioRepo,
 } from "./transcribe-audio.repo";
-import { ToolRepo } from "./tool.repo";
 import {
   BaseTranscriptionRepo,
   LocalTranscriptionRepo,
@@ -120,6 +120,7 @@ import {
   EnterpriseUserRepo,
   LocalUserRepo,
 } from "./user.repo";
+export { BaseModelProviderRepo } from "./model-provider.repo";
 
 const isEnterprise = () => getIsEnterpriseEnabled();
 const isLoggedIn = () => !!getAppState().auth;
@@ -130,6 +131,10 @@ export const getMemberRepo = (): BaseMemberRepo => {
 
 export const getStripeRepo = (): Nullable<BaseStripeRepo> => {
   return isEnterprise() ? null : new CloudStripeRepo();
+};
+
+export const getTenantRepo = (): Nullable<BaseTenantRepo> => {
+  return isEnterprise() ? null : new CloudTenantRepo();
 };
 
 export const getConfigRepo = (): BaseConfigRepo => {

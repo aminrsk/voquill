@@ -81,8 +81,8 @@ pub fn build() -> tauri::Builder<tauri::Wry> {
         .on_window_event(|window, event| {
             match event {
                 WindowEvent::CloseRequested { api, .. } => {
-                    api.prevent_close();
                     if window.label() == "main" {
+                        api.prevent_close();
                         let _ = window
                             .app_handle()
                             .save_window_state(StateFlags::SIZE | StateFlags::POSITION);
@@ -155,6 +155,7 @@ pub fn build() -> tauri::Builder<tauri::Wry> {
             app.manage(crate::state::GoogleOAuthState::from_env());
             app.manage(crate::state::OverlayState::new());
             app.manage(crate::state::RemoteReceiverState::new());
+            app.manage(crate::state::FloatingWindowState::new());
 
             match crate::system::auth_session::AuthSession::new(app.handle()) {
                 Ok(session) => {
@@ -299,6 +300,7 @@ pub fn build() -> tauri::Builder<tauri::Wry> {
             crate::commands::write_accessibility_fields,
             crate::commands::focus_accessibility_field,
             crate::commands::read_accessibility_field_values,
+            crate::commands::resolve_app_pids,
             crate::commands::check_focused_paste_target,
             crate::commands::read_enterprise_target,
             crate::commands::run_terminal_command,
@@ -326,6 +328,9 @@ pub fn build() -> tauri::Builder<tauri::Wry> {
             crate::commands::auth_sign_out,
             crate::commands::auth_is_signed_in,
             crate::commands::return_to_shell,
+            crate::commands::floating_window_create,
+            crate::commands::floating_window_destroy,
+            crate::commands::floating_window_list,
         ])
 }
 

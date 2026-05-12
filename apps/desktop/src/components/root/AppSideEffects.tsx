@@ -46,10 +46,15 @@ import {
   getConfigRepo,
   getEnterpriseRepo,
   getMemberRepo,
+  getTenantRepo,
   getTermRepo,
   getUserRepo,
 } from "../../repos";
-import { HotkeyStrategy, PasteKeybindSupport } from "../../state/app.state";
+import {
+  HotkeyStrategy,
+  MyTenantMembership,
+  PasteKeybindSupport,
+} from "../../state/app.state";
 import { getAppState, produceAppState, useAppStore } from "../../store";
 import { AuthUser } from "../../types/auth.types";
 import { OverlayPhase } from "../../types/overlay.types";
@@ -78,7 +83,9 @@ import {
   surfaceMainWindow,
 } from "../../utils/window.utils";
 
-type StreamRet = Nullable<[Nullable<Member>, Nullable<User>]>;
+type StreamRet = Nullable<
+  [Nullable<Member>, Nullable<User>, Nullable<MyTenantMembership>]
+>;
 
 type KeysHeldPayload = {
   keys: string[];
@@ -355,7 +362,7 @@ export const AppSideEffects = () => {
       }
 
       if (!userId) {
-        return combineLatest([of(null), of(null)]);
+        return combineLatest([of(null), of(null), of(null)]);
       }
 
       return combineLatest([
@@ -369,6 +376,25 @@ export const AppSideEffects = () => {
             .getMyUser()
             .catch(() => null),
         ),
+        from(
+          (async (): Promise<Nullable<MyTenantMembership>> => {
+            const repo = getTenantRepo();
+            if (!repo) return null;
+            try {
+              const tenants = await repo.listMine();
+              const first = tenants[0];
+              return first
+                ? {
+                    tenant: first.tenant,
+                    role: first.role,
+                    hasSeat: first.hasSeat,
+                  }
+                : null;
+            } catch {
+              return null;
+            }
+          })(),
+        ),
       ]);
     },
     onSuccess: (results) => {
@@ -377,10 +403,11 @@ export const AppSideEffects = () => {
         return;
       }
 
-      const [members, user] = results;
+      const [members, user, tenant] = results;
       produceAppState((draft) => {
         registerUsers(draft, listify(user));
         registerMembers(draft, listify(members));
+        draft.myTenant = tenant;
       });
     },
     dependencies: [userId, authReady, isEnterprise],

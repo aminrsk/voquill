@@ -236,9 +236,9 @@ async surfaceMainWindow() : Promise<Result<null, string>> {
 async setPillWindowSize(size: PillWindowSize) : Promise<void> {
     await TAURI_INVOKE("set_pill_window_size", { size });
 },
-async paste(text: string, keybind: string | null) : Promise<Result<PasteOutcome, string>> {
+async paste(text: string, keybind: string | null, skipClipboardRestore: boolean | null) : Promise<Result<PasteOutcome, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("paste", { text, keybind }) };
+    return { status: "ok", data: await TAURI_INVOKE("paste", { text, keybind, skipClipboardRestore }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -587,6 +587,20 @@ async readAccessibilityFieldValues(fields: FieldValueRequest[]) : Promise<Result
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Enumerate currently-running processes matching `identity`. Returns every
+ * candidate so the caller (which knows the binding's `windowTitle` and other
+ * heuristics) can disambiguate when multiple instances are running. Returns
+ * an empty vec when the app is not running.
+ */
+async resolveAppPids(identity: AppIdentity) : Promise<Result<AppProcessMatch[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resolve_app_pids", { identity }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async checkFocusedPasteTarget() : Promise<Result<PasteTargetState, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("check_focused_paste_target") };
@@ -810,6 +824,38 @@ async returnToShell() : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Opens a draggable, always-on-top webview window pointed at the given URL
+ * and returns a stable id that can be used to destroy it later. The window
+ * renders any URL the platform webview can load (the same set the main
+ * window can load). The window is independent of the main app window — it
+ * will not be backgrounded behind other windows because of the always-on-top
+ * flag.
+ */
+async floatingWindowCreate(args: CreateFloatingWindowArgs) : Promise<Result<FloatingWindowInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("floating_window_create", { args }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async floatingWindowDestroy(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("floating_window_destroy", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async floatingWindowList() : Promise<Result<FloatingWindowInfo[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("floating_window_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -833,23 +879,97 @@ backend?: string | null;
  * Canonical string path for JAB elements. Empty for UIAutomation.
  * When present, resolvers prefer it over `element_index_path`.
  */
-jabStringPath?: JabElementId[] }
+jabStringPath?: JabElementId[]; 
+/**
+ * Stable identity (exe path, bundle id, ...) captured at bind time.
+ * Persisting this alongside the PID lets callers re-resolve the PID
+ * after the host app restarts via `resolve_app_pids`.
+ */
+appIdentity?: AppIdentity | null; 
+/**
+ * Free-form escape hatch for future field metadata. See the matching
+ * field on `ElementFingerprint` — same purpose: lets us extend the
+ * payload later without shipping a new schema version.
+ */
+details?: string | null }
 export type AccessibilityFocusTarget = { appPid: number; elementIndexPath: number[]; fingerprintChain: ElementFingerprint[] | null; backend?: string | null; jabStringPath?: JabElementId[] | null }
 export type AccessibilityWriteEntry = { appPid: number; elementIndexPath: number[]; fingerprintChain: ElementFingerprint[] | null; value: string; backend?: string | null; jabWriteMethod?: JabWriteMethod; jabStringPath?: JabElementId[] | null }
 export type AccessibilityWriteResult = { succeeded: number; failed: number; errors: string[] }
 export type ApiKeyCreateRequest = { id: string; name: string; provider: string; key: string; baseUrl?: string | null; azureRegion?: string | null; includeV1Path?: boolean | null }
 export type ApiKeyUpdateRequest = { id: string; name?: string | null; key?: string | null; transcriptionModel?: string | null; postProcessingModel?: string | null; openRouterConfig?: string | null; baseUrl?: string | null; azureRegion?: string | null; includeV1Path?: boolean | null }
 export type ApiKeyView = { id: string; name: string; provider: string; createdAt: number; keySuffix?: string | null; keyFull?: string | null; transcriptionModel?: string | null; postProcessingModel?: string | null; openRouterConfig?: string | null; baseUrl?: string | null; azureRegion?: string | null; includeV1Path?: boolean | null }
+/**
+ * Stable, relaunch-surviving identifier for a host application. PIDs change
+ * every launch; these fields do not. Populated by `get_focused_field_info`
+ * at capture time, then passed to `resolve_app_pids` on subsequent sessions
+ * to re-resolve the current PID.
+ * 
+ * Every field is optional because availability is platform-dependent and
+ * bindings captured on one OS must still deserialize on another.
+ */
+export type AppIdentity = { 
+/**
+ * Windows: full absolute path to the process executable (e.g.
+ * `C:\Program Files\LigoLab\LigoLab.exe`). Case-insensitive match.
+ */
+exePath?: string | null; 
+/**
+ * Windows: basename of `exe_path` (e.g. `LigoLab.exe`). Lossy fallback
+ * used when the install directory differs across machines.
+ */
+exeName?: string | null; 
+/**
+ * macOS: `CFBundleIdentifier` of the application (e.g.
+ * `com.ligolab.client`). The canonical stable id on that platform.
+ */
+bundleId?: string | null }
+/**
+ * A currently-running process that matches an `AppIdentity`. Returned from
+ * `resolve_app_pids`; the caller (frontend) picks one, typically by
+ * matching `window_title` against the title recorded with the binding.
+ */
+export type AppProcessMatch = { pid: number; exePath: string | null; appName: string | null; windowTitle: string | null }
 export type AppTarget = { id: string; name: string; createdAt: string; toneId: string | null; iconPath: string | null; pasteKeybind?: string | null }
 export type AppTargetUpsertArgs = { id: string; name: string; toneId?: string | null; iconPath?: string | null; pasteKeybind?: string | null }
 export type AudioClip = "start_recording_clip" | "stop_recording_clip" | "alert_linux_clip" | "alert_macos_clip" | "alert_windows_10_clip" | "alert_windows_11_clip"
 export type ChatMessage = { id: string; conversationId: string; role: string; content: string; createdAt: number; metadata: string | null }
 export type CompositorBinding = { actionName: string; keys: string[] }
 export type Conversation = { id: string; title: string; createdAt: number; updatedAt: number }
+export type CreateFloatingWindowArgs = { url: string; title: string | null; width: number | null; height: number | null; minWidth: number | null; minHeight: number | null; x: number | null; y: number | null; decorations: boolean | null; transparent: boolean | null; resizable: boolean | null; focused: boolean | null }
 export type CurrentAppInfoResponse = { appName: string; iconBase64: string }
-export type ElementFingerprint = { automationId: string | null; className: string | null; controlType: number; name: string | null; frameworkId: string | null; childIndex: number }
+export type ElementFingerprint = { automationId: string | null; className: string | null; controlType: number; name: string | null; frameworkId: string | null; childIndex: number; 
+/**
+ * macOS only. AXRole of the element at this depth (e.g. "AXTextArea").
+ * Required match at resolve time when present.
+ */
+axRole?: string | null; 
+/**
+ * macOS only. AXSubrole if any (e.g. "AXSecureTextField").
+ */
+axSubrole?: string | null; 
+/**
+ * macOS only. AXTitle.
+ */
+axTitle?: string | null; 
+/**
+ * macOS only. AXDescription / AXHelp text.
+ */
+axDescription?: string | null; 
+/**
+ * macOS only. AXIdentifier (developer-assigned) when present — strongest
+ * stable signal and a hard disqualifier when mismatched.
+ */
+axIdentifier?: string | null; 
+/**
+ * Free-form escape hatch for future fingerprint metadata. Persisted
+ * round-trip through the frontend / Firestore so we can extend
+ * fingerprinting later without bumping the type schema. Convention:
+ * JSON string keyed by feature name when there's something to store.
+ */
+details?: string | null }
 export type FieldValueRequest = { appPid: number; elementIndexPath: number[]; fingerprintChain: ElementFingerprint[] | null; backend?: string | null; jabStringPath?: JabElementId[] | null }
 export type FieldValueResult = { value: string | null; error: string | null }
+export type FloatingWindowInfo = { id: string; url: string; title: string }
 export type GoogleAuthEventPayload = { idToken: string; accessToken: string; refreshToken: string | null; expiresIn: number; tokenType: string; user: GoogleUserInfo }
 export type GoogleUserInfo = { sub: string; email: string | null; name: string | null; picture: string | null }
 export type GpuAdapterInfo = { name: string; vendor: number; device: number; deviceType: string; backend: string }

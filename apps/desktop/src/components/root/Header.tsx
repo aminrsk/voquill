@@ -66,12 +66,22 @@ export const AppHeader = () => {
   const plan = useAppStore((state) => getEffectivePlan(state));
   const planName = useAppStore((state) => {
     const plan = getEffectivePlan(state);
-    if (plan !== "enterprise") {
-      return planToDisplayName(plan);
+    if (plan === "enterprise") {
+      const orgName = state.enterpriseLicense?.org.trim();
+      return orgName || planToDisplayName(plan);
     }
 
-    const orgName = state.enterpriseLicense?.org.trim();
-    return orgName || planToDisplayName(plan);
+    // Only show the tenant name if the user is actually occupying one of the
+    // tenant's paid seats. Members without a seat fall back to their personal
+    // plan label.
+    if (state.myTenant?.hasSeat) {
+      const tenantName = state.myTenant.tenant.name.trim();
+      if (tenantName) {
+        return tenantName;
+      }
+    }
+
+    return planToDisplayName(plan);
   });
 
   const myName = useAppStore((state) => {

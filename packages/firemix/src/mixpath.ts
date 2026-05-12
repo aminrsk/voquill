@@ -1,7 +1,11 @@
 import { FiremixPath } from "@firemix/core";
 import {
   Contact,
+  DatabaseGlobalDictionary,
   DatabaseMember,
+  DatabaseTenant,
+  DatabaseTenantInvitation,
+  DatabaseTenantMembership,
   DatabaseUser,
   FlaggedAudio,
   Nullable,
@@ -45,5 +49,29 @@ export const flaggedAudio = (
   flaggedAudioId?: Nullable<string>,
 ): FiremixPath<FlaggedAudio> => {
   return ["flaggedAudio", ...listify(flaggedAudioId)];
+};
+
+export const tenants = (
+  tenantId?: Nullable<string>,
+): FiremixPath<DatabaseTenant> => {
+  return ["tenants", ...listify(tenantId)];
+};
+
+export const tenantMemberships = (
+  membershipId?: Nullable<string>,
+): FiremixPath<DatabaseTenantMembership> => {
+  return ["tenant_memberships", ...listify(membershipId)];
+};
+
+export const tenantInvitations = (
+  invitationId?: Nullable<string>,
+): FiremixPath<DatabaseTenantInvitation> => {
+  return ["tenant_invitations", ...listify(invitationId)];
+};
+
+export const globalDictionaries = (
+  tenantId?: Nullable<string>,
+): FiremixPath<DatabaseGlobalDictionary> => {
+  return ["globalDictionaries", ...listify(tenantId)];
 };
 
