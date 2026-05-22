@@ -1,3 +1,2 @@
-- Add support for more OpenAI models
-- Voquill now supports team plans!
+- Add support for simulated typing as a paste option for all platforms
 - Various bug fixes and improvements

@@ -1,9 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window and any floating-* webview spawned via floating_window_create",
   "windows": [
-    "main"
+    "main",
+    "floating-*"
   ],
   "remote": {
     "urls": [

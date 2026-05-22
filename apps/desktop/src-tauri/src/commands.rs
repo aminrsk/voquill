@@ -1,7 +1,10 @@
 use std::convert::TryInto;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static CANCEL_TYPING: AtomicBool = AtomicBool::new(false);
 use tauri::{AppHandle, Emitter, EventTarget, Manager, State};
 
 use crate::domain::{
@@ -269,6 +272,10 @@ pub struct AppTargetUpsertArgs {
     pub icon_path: Option<String>,
     #[serde(default)]
     pub paste_keybind: Option<String>,
+    #[serde(default)]
+    pub insertion_method: Option<String>,
+    #[serde(default)]
+    pub typing_speed_ms: Option<i64>,
 }
 
 #[derive(serde::Deserialize, specta::Type)]
@@ -554,6 +561,8 @@ pub async fn app_target_upsert(
         args.tone_id,
         args.icon_path,
         args.paste_keybind,
+        args.insertion_method,
+        args.typing_speed_ms,
     )
     .await
     .map_err(|err| err.to_string())
@@ -1609,6 +1618,42 @@ pub async fn paste(
 
 #[tauri::command]
 #[specta::specta]
+pub async fn simulate_type(text: String, delay_ms: u64) -> Result<(), String> {
+    if text.trim().is_empty() {
+        return Ok(());
+    }
+
+    CANCEL_TYPING.store(false, Ordering::SeqCst);
+
+    let join_result = tauri::async_runtime::spawn_blocking(move || {
+        crate::platform::input::type_text_into_focused_field(&text, delay_ms, &CANCEL_TYPING)
+    })
+    .await;
+
+    match join_result {
+        Ok(result) => {
+            if let Err(ref err) = result {
+                log::error!("Simulated typing failed: {err}");
+            }
+            result
+        }
+        Err(err) => {
+            let message = format!("Simulate type task join error: {err}");
+            log::error!("{message}");
+            Err(message)
+        }
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_typing() -> Result<(), String> {
+    CANCEL_TYPING.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn set_phase(
     app: AppHandle,
     phase: String,
@@ -1993,9 +2038,7 @@ pub async fn read_accessibility_field_values(
 /// an empty vec when the app is not running.
 #[tauri::command]
 #[specta::specta]
-pub async fn resolve_app_pids(
-    identity: AppIdentity,
-) -> Result<Vec<AppProcessMatch>, String> {
+pub async fn resolve_app_pids(identity: AppIdentity) -> Result<Vec<AppProcessMatch>, String> {
     tokio::time::timeout(
         std::time::Duration::from_secs(3),
         tauri::async_runtime::spawn_blocking(move || {
@@ -2308,4 +2351,115 @@ pub async fn auth_is_signed_in(
         .is_signed_in()
         .await
         .map_err(|err| err.to_user_string())
+}
+
+#[derive(serde::Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateFloatingWindowArgs {
+    pub url: String,
+    pub title: Option<String>,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub min_width: Option<f64>,
+    pub min_height: Option<f64>,
+    pub x: Option<f64>,
+    pub y: Option<f64>,
+    pub decorations: Option<bool>,
+    pub transparent: Option<bool>,
+    pub resizable: Option<bool>,
+    pub focused: Option<bool>,
+}
+
+#[derive(serde::Serialize, specta::Type, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct FloatingWindowInfo {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+}
+
+/// Opens a draggable, always-on-top webview window pointed at the given URL
+/// and returns a stable id that can be used to destroy it later. The window
+/// renders any URL the platform webview can load (the same set the main
+/// window can load). The window is independent of the main app window — it
+/// will not be backgrounded behind other windows because of the always-on-top
+/// flag.
+#[tauri::command]
+#[specta::specta]
+pub async fn floating_window_create(
+    args: CreateFloatingWindowArgs,
+    app: AppHandle,
+    state: State<'_, crate::state::FloatingWindowState>,
+) -> Result<FloatingWindowInfo, String> {
+    let parsed_url = url::Url::parse(&args.url).map_err(|err| err.to_string())?;
+    let label = state.next_label();
+    let title = args.title.clone().unwrap_or_else(|| "Voquill".to_string());
+
+    let mut builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        label.clone(),
+        tauri::WebviewUrl::External(parsed_url),
+    )
+    .title(title.clone())
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .decorations(args.decorations.unwrap_or(true))
+    .resizable(args.resizable.unwrap_or(true))
+    .focused(args.focused.unwrap_or(false));
+
+    if args.transparent.unwrap_or(false) {
+        builder = builder.transparent(true);
+    }
+
+    if let (Some(w), Some(h)) = (args.width, args.height) {
+        builder = builder.inner_size(w, h);
+    }
+    if let (Some(min_w), Some(min_h)) = (args.min_width, args.min_height) {
+        builder = builder.min_inner_size(min_w, min_h);
+    }
+    if let (Some(x), Some(y)) = (args.x, args.y) {
+        builder = builder.position(x, y);
+    }
+
+    builder.build().map_err(|err| err.to_string())?;
+
+    Ok(FloatingWindowInfo {
+        id: label,
+        url: args.url,
+        title,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn floating_window_destroy(id: String, app: AppHandle) -> Result<(), String> {
+    if !id.starts_with(crate::state::FLOATING_WINDOW_LABEL_PREFIX) {
+        return Err(format!("invalid floating window id: {id}"));
+    }
+    match app.get_webview_window(&id) {
+        Some(window) => window.close().map_err(|err| err.to_string()),
+        None => Ok(()),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn floating_window_list(app: AppHandle) -> Result<Vec<FloatingWindowInfo>, String> {
+    let mut out = Vec::new();
+    for (label, window) in app.webview_windows() {
+        if !label.starts_with(crate::state::FLOATING_WINDOW_LABEL_PREFIX) {
+            continue;
+        }
+        let title = window.title().unwrap_or_default();
+        let url = window
+            .url()
+            .map(|u| u.to_string())
+            .unwrap_or_else(|_| String::new());
+        out.push(FloatingWindowInfo {
+            id: label,
+            url,
+            title,
+        });
+    }
+    Ok(out)
 }
