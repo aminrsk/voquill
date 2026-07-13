@@ -2,6 +2,7 @@ import {
   AZURE_OPENAI_MODELS,
   CEREBRAS_MODELS,
   CLAUDE_MODELS,
+  DEEPGRAM_TRANSCRIPTION_MODELS,
   DEEPSEEK_MODELS,
   GEMINI_GENERATE_TEXT_MODELS,
   GEMINI_TRANSCRIPTION_MODELS,
@@ -501,6 +502,6 @@ export class DeepgramModelProviderRepo extends BaseModelProviderRepo {
   }
 
   async getTranscriptionModels(): Promise<string[]> {
-    return ["nova-3"];
+    return [...DEEPGRAM_TRANSCRIPTION_MODELS];
   }
 }

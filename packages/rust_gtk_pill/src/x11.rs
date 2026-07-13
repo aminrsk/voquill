@@ -123,8 +123,10 @@ pub(crate) fn setup_x11_window(window: &gtk::Window) {
                     let wa_w = wa.width() as f64 * scale;
                     let wa_h = wa.height() as f64 * scale;
                     let (alloc_w, alloc_h) = win_ref.size();
-                    let win_w = alloc_w as f64;
-                    let win_h = alloc_h as f64;
+                    // win_ref.size() returns logical pixels; XMoveWindow and the
+                    // workarea math above are in physical pixels, so scale here too.
+                    let win_w = alloc_w as f64 * scale;
+                    let win_h = alloc_h as f64 * scale;
                     let margin = MARGIN_BOTTOM as f64 * scale;
                     return Some((
                         (wa_x + (wa_w - win_w) / 2.0) as c_int,

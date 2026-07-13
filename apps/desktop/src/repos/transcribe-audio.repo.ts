@@ -4,6 +4,7 @@ import { batchAsync } from "@voquill/utilities";
 import {
   aldeaTranscribeAudio,
   azureTranscribeAudio,
+  deepgramTranscribeAudio,
   elevenlabsTranscribeAudio,
   geminiTranscribeAudio,
   GeminiTranscriptionModel,
@@ -444,6 +445,52 @@ export class ElevenLabsTranscribeAudioRepo extends BaseTranscribeAudioRepo {
       metadata: {
         inferenceDevice: "API • ElevenLabs",
         modelSize: null,
+        transcriptionMode: "api",
+      },
+    };
+  }
+}
+
+export class DeepgramTranscribeAudioRepo extends BaseTranscribeAudioRepo {
+  private apiKey: string;
+  private model: string;
+
+  constructor(apiKey: string, model: string | null) {
+    super();
+    this.apiKey = apiKey;
+    this.model = model ?? "nova-3";
+  }
+
+  protected getSegmentDurationSec(): number {
+    return 60;
+  }
+
+  protected getOverlapDurationSec(): number {
+    return 5;
+  }
+
+  protected getBatchChunkCount(): number {
+    return 3;
+  }
+
+  protected async transcribeSegment(
+    input: TranscribeSegmentInput,
+  ): Promise<TranscribeAudioOutput> {
+    const wavBuffer = buildWaveFile(input.samples, input.sampleRate);
+
+    const { text: transcript } = await deepgramTranscribeAudio({
+      apiKey: this.apiKey,
+      model: this.model,
+      blob: wavBuffer,
+      ext: "wav",
+      language: input.language,
+    });
+
+    return {
+      text: transcript,
+      metadata: {
+        inferenceDevice: "API • Deepgram",
+        modelSize: this.model,
         transcriptionMode: "api",
       },
     };

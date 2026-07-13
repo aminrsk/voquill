@@ -1,4 +1,5 @@
 import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import DeleteOutlineRoundedIcon from "@mui/icons-material/DeleteOutlineRounded";
 import FileDownloadOutlinedIcon from "@mui/icons-material/FileDownloadOutlined";
 import FlagOutlinedIcon from "@mui/icons-material/FlagOutlined";
@@ -7,6 +8,7 @@ import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import SendRoundedIcon from "@mui/icons-material/SendRounded";
 import {
   Chip,
+  CircularProgress,
   Divider,
   IconButton,
   Stack,
@@ -52,11 +54,19 @@ export const TranscriptionRow = ({ id }: TranscriptionRowProps) => {
   const isRetranscribing = useAppStore((state) =>
     state.transcriptions.retranscribingIds.includes(id),
   );
+  const didRetranscribe = useAppStore((state) =>
+    state.transcriptions.retranscriptionSuccessIds.includes(id),
+  );
 
   const audioSnapshot = transcription?.audio;
   const activeRemoteTarget = useAppStore(getActiveRemoteTarget);
   const isRemoteTranscript = transcription?.remoteStatus === "received";
   const isSentToRemote = transcription?.remoteStatus === "sent";
+  const retranscribeTooltip = isRetranscribing
+    ? intl.formatMessage({ defaultMessage: "Retranscribing audio clip" })
+    : didRetranscribe
+      ? intl.formatMessage({ defaultMessage: "Retranscribed audio clip" })
+      : intl.formatMessage({ defaultMessage: "Retranscribe audio clip" });
 
   const handleDetailsOpen = useCallback(() => {
     openTranscriptionDetailsDialog(id);
@@ -234,12 +244,7 @@ export const TranscriptionRow = ({ id }: TranscriptionRowProps) => {
           disabled={isRetranscribing}
           actions={
             <>
-              <Tooltip
-                title={intl.formatMessage({
-                  defaultMessage: "Retranscribe audio clip",
-                })}
-                placement="top"
-              >
+              <Tooltip title={retranscribeTooltip} placement="top">
                 <IconButton
                   aria-label={intl.formatMessage({
                     defaultMessage: "Retranscribe audio",
@@ -249,7 +254,13 @@ export const TranscriptionRow = ({ id }: TranscriptionRowProps) => {
                   disabled={isRetranscribing}
                   sx={{ p: 0.5 }}
                 >
-                  <ReplayRoundedIcon fontSize="small" />
+                  {isRetranscribing ? (
+                    <CircularProgress size={18} color="inherit" />
+                  ) : didRetranscribe ? (
+                    <CheckCircleRoundedIcon color="success" fontSize="small" />
+                  ) : (
+                    <ReplayRoundedIcon fontSize="small" />
+                  )}
                 </IconButton>
               </Tooltip>
               <Tooltip

@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { INITIAL_APP_STATE } from "../state/app.state";
+import { setAppState } from "../store";
+import { getTranscribeAudioRepo } from ".";
 import {
   BaseTranscribeAudioRepo,
+  DeepgramTranscribeAudioRepo,
   TranscribeAudioOutput,
   TranscribeSegmentInput,
 } from "./transcribe-audio.repo";
@@ -74,6 +78,19 @@ class MockTranscribeAudioRepo extends BaseTranscribeAudioRepo {
 // Helper to create samples of a specific duration
 const createSamples = (durationSec: number, sampleRate: number): Float32Array =>
   new Float32Array(Math.floor(durationSec * sampleRate));
+
+const resetStore = () => {
+  setAppState(structuredClone(INITIAL_APP_STATE), true);
+};
+
+beforeEach(() => {
+  resetStore();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  resetStore();
+});
 
 describe("BaseTranscribeAudioRepo", () => {
   describe("short audio (no splitting)", () => {
@@ -276,5 +293,62 @@ describe("BaseTranscribeAudioRepo", () => {
         "In the beginning there was silence and then came the sound of voices speaking softly in the distance growing louder with each passing moment",
       );
     });
+  });
+});
+
+describe("DeepgramTranscribeAudioRepo", () => {
+  it("requests Deepgram language detection for automatic language", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: {
+            channels: [
+              {
+                alternatives: [{ transcript: "bonjour tout le monde" }],
+              },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    const repo = new DeepgramTranscribeAudioRepo("dg-key", null);
+
+    const result = await repo.transcribeAudio({
+      samples: createSamples(1, 16000),
+      sampleRate: 16000,
+      language: "auto",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    const requestUrl = new URL(String(url));
+
+    expect(result.text).toBe("bonjour tout le monde");
+    expect(requestUrl.searchParams.get("detect_language")).toBe("true");
+    expect(requestUrl.searchParams.has("language")).toBe(false);
+    expect(init?.headers).toMatchObject({
+      Authorization: "Token dg-key",
+      "Content-Type": "audio/wav",
+    });
+  });
+
+  it("is selected for Deepgram API transcription preferences", () => {
+    const state = structuredClone(INITIAL_APP_STATE);
+    state.settings.aiTranscription.mode = "api";
+    state.settings.aiTranscription.selectedApiKeyId = "deepgram-key";
+    state.apiKeyById["deepgram-key"] = {
+      id: "deepgram-key",
+      name: "Deepgram",
+      provider: "deepgram",
+      createdAt: "2026-06-03T00:00:00.000Z",
+      keyFull: "dg-key",
+      transcriptionModel: "nova-3",
+    };
+    setAppState(state, true);
+
+    const { repo, apiKeyId } = getTranscribeAudioRepo();
+
+    expect(repo).toBeInstanceOf(DeepgramTranscribeAudioRepo);
+    expect(apiKeyId).toBe("deepgram-key");
   });
 });

@@ -9,7 +9,6 @@ import {
 } from "@mui/icons-material";
 import { Box, List, Stack } from "@mui/material";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { shouldSurfaceUpdate } from "@voquill/desktop-utils";
 import { FormattedMessage } from "react-intl";
 import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -37,12 +36,7 @@ export const DashboardMenu = ({ onChoose }: DashboardMenuProps) => {
   const nav = useNavigate();
   const isEnterprise = useAppStore((state) => state.isEnterprise);
   const isUpdateAvailable = useAppStore(
-    (state) =>
-      state.updater.status === "ready" &&
-      shouldSurfaceUpdate(
-        state.updater.releaseDate,
-        state.local.optInToBetaUpdates,
-      ),
+    (state) => state.updater.status === "ready",
   );
   const assistantModeEnabled = useAppStore(getIsAssistantModeEnabled);
 

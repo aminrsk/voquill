@@ -1,6 +1,14 @@
+import { countWords, retry } from "@voquill/utilities";
+
 export type DeepgramTestIntegrationArgs = {
   apiKey: string;
 };
+
+export const DEEPGRAM_TRANSCRIPTION_MODELS = ["nova-3"] as const;
+export type DeepgramTranscriptionModel =
+  (typeof DEEPGRAM_TRANSCRIPTION_MODELS)[number];
+
+const DEEPGRAM_LISTEN_URL = "https://api.deepgram.com/v1/listen";
 
 export const deepgramTestIntegration = ({
   apiKey,
@@ -31,5 +39,85 @@ export const deepgramTestIntegration = ({
         resolve(false);
       }
     };
+  });
+};
+
+export type DeepgramTranscriptionArgs = {
+  apiKey: string;
+  model?: string;
+  blob: ArrayBuffer | Buffer;
+  ext: string;
+  language?: string;
+};
+
+export type DeepgramTranscribeAudioOutput = {
+  text: string;
+  wordsUsed: number;
+};
+
+export const deepgramTranscribeAudio = async ({
+  apiKey,
+  model = "nova-3",
+  blob,
+  ext,
+  language,
+}: DeepgramTranscriptionArgs): Promise<DeepgramTranscribeAudioOutput> => {
+  return retry({
+    retries: 3,
+    fn: async () => {
+      const params = new URLSearchParams({
+        model,
+        punctuate: "true",
+        smart_format: "true",
+      });
+
+      if (language && language !== "auto") {
+        params.set("language", language);
+      } else {
+        params.set("detect_language", "true");
+      }
+
+      const response = await fetch(
+        `${DEEPGRAM_LISTEN_URL}?${params.toString()}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Token ${apiKey.trim()}`,
+            "Content-Type": `audio/${ext}`,
+          },
+          body:
+            blob instanceof ArrayBuffer ? blob : (blob.buffer as ArrayBuffer),
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "Unknown error");
+        throw new Error(
+          `Deepgram transcription request failed with status ${response.status}: ${errorText}`,
+        );
+      }
+
+      const data = (await response.json()) as {
+        results?: {
+          channels?: Array<{
+            alternatives?: Array<{
+              transcript?: string;
+            }>;
+          }>;
+        };
+      };
+      const transcript =
+        data.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() ??
+        "";
+
+      if (!transcript) {
+        throw new Error("Transcription failed: No text in Deepgram response");
+      }
+
+      return {
+        text: transcript,
+        wordsUsed: countWords(transcript),
+      };
+    },
   });
 };

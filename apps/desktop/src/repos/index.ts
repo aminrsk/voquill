@@ -99,6 +99,7 @@ import {
   AldeaTranscribeAudioRepo,
   AzureTranscribeAudioRepo,
   BaseTranscribeAudioRepo,
+  DeepgramTranscribeAudioRepo,
   ElevenLabsTranscribeAudioRepo,
   EnterpriseTranscribeAudioRepo,
   GeminiTranscribeAudioRepo,
@@ -448,6 +449,11 @@ export const getTranscribeAudioRepo = (): TranscribeAudioRepoOutput => {
       );
     } else if (prefs.provider === "elevenlabs") {
       repo = new ElevenLabsTranscribeAudioRepo(prefs.apiKeyValue);
+    } else if (prefs.provider === "deepgram") {
+      repo = new DeepgramTranscribeAudioRepo(
+        prefs.apiKeyValue,
+        prefs.transcriptionModel,
+      );
     } else if (prefs.provider === "xai") {
       repo = new XaiTranscribeAudioRepo(
         prefs.apiKeyValue,

@@ -60,7 +60,6 @@ const relaunch = async (): Promise<void> => {
 const GITHUB_RELEASE_DOWNLOAD_BASE =
   "https://github.com/voquill/voquill/releases/download";
 const RELEASE_TAG_REGEX = /\/releases\/download\/([^/]+)\//;
-const BETA_UPDATE_DELAY_MS = 3 * 24 * 60 * 60 * 1000;
 
 export type AvailableUpdateInfo = {
   currentVersion: string;
@@ -81,26 +80,6 @@ export type UpdateDownloadCallbacks = {
 };
 
 let availableUpdate: Update | null = null;
-
-export const shouldSurfaceUpdate = (
-  releaseDate: string | null,
-  optInToBetaUpdates: boolean,
-): boolean => {
-  if (optInToBetaUpdates) {
-    return true;
-  }
-
-  if (!releaseDate) {
-    return true;
-  }
-
-  const parsed = new Date(releaseDate).getTime();
-  if (Number.isNaN(parsed)) {
-    return true;
-  }
-
-  return Date.now() - parsed >= BETA_UPDATE_DELAY_MS;
-};
 
 export const isReadOnlyFilesystemInstallError = (
   message: string | null | undefined,

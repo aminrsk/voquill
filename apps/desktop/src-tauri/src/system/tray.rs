@@ -34,6 +34,7 @@ use std::sync::OnceLock;
 use tauri::menu::MenuItem;
 
 pub const EVT_INSTALL_UPDATE: &str = "tray-install-update";
+pub const EVT_COPY_LAST_TRANSCRIPT: &str = "tray-copy-last-transcript";
 
 static UPDATE_MENU_ITEM: OnceLock<MenuItem<tauri::Wry>> = OnceLock::new();
 
@@ -45,6 +46,13 @@ pub fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::{Emitter, Manager};
 
     let open_item = MenuItem::with_id(app, "open-dashboard", "Open Dashboard", true, None::<&str>)?;
+    let copy_last_transcript_item = MenuItem::with_id(
+        app,
+        "copy-last-transcript",
+        "Copy Latest Transcript",
+        true,
+        None::<&str>,
+    )?;
     let update_item =
         MenuItem::with_id(app, "install-update", "Install Update", false, None::<&str>)?;
     let _ = UPDATE_MENU_ITEM.set(update_item.clone());
@@ -59,6 +67,7 @@ pub fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
 
     let menu = MenuBuilder::new(app)
         .item(&open_item)
+        .item(&copy_last_transcript_item)
         .item(&register_current_app_item)
         .item(&update_item)
         .separator()
@@ -76,6 +85,11 @@ pub fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
             "open-dashboard" => {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = crate::platform::window::surface_main_window(&window);
+                }
+            }
+            "copy-last-transcript" => {
+                if let Err(err) = app.emit(EVT_COPY_LAST_TRANSCRIPT, ()) {
+                    log::error!("Failed to emit copy-last-transcript event: {err}");
                 }
             }
             "install-update" => {

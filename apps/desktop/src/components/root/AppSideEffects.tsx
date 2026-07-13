@@ -48,6 +48,7 @@ import {
   getMemberRepo,
   getTenantRepo,
   getTermRepo,
+  getTranscriptionRepo,
   getUserRepo,
 } from "../../repos";
 import {
@@ -676,6 +677,15 @@ export const AppSideEffects = () => {
   useTauriListen<void>("tray-install-update", () => {
     surfaceMainWindow();
     installAvailableUpdate();
+  });
+
+  useTauriListen<void>("tray-copy-last-transcript", async () => {
+    const [latest] = await getTranscriptionRepo().listTranscriptions({
+      limit: 1,
+    });
+    if (latest?.transcript) {
+      await invoke("copy_to_clipboard", { text: latest.transcript });
+    }
   });
 
   const menuBarIconHidden = prefs?.menuBarIconHidden ?? false;

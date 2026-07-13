@@ -12,7 +12,9 @@ export const buildDeepgramWebSocketUrl = (args: {
     endpointing: "300",
   });
 
-  if (args.language && args.language !== "auto") {
+  if (args.language === "auto") {
+    params.set("language", "multi");
+  } else if (args.language) {
     params.set("language", args.language);
   }
 

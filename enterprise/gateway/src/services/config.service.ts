@@ -21,6 +21,7 @@ export async function getFullConfig(): Promise<
       proTokensPerDay: TOKEN_LIMIT,
       proTokensPerWeek: TOKEN_LIMIT * 7,
       proTokensPerMonth: TOKEN_LIMIT * 30,
+      wordsNeededForTrialExtension: 200,
     },
   };
 }

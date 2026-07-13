@@ -1,7 +1,9 @@
+import CheckCircleRoundedIcon from "@mui/icons-material/CheckCircleRounded";
 import ReplayRoundedIcon from "@mui/icons-material/ReplayRounded";
 import {
   Box,
   Button,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -70,6 +72,13 @@ export const TranscriptionDetailsDialog = () => {
   const isRetranscribing = useAppStore((state) =>
     transcription?.id
       ? state.transcriptions.retranscribingIds.includes(transcription.id)
+      : false,
+  );
+  const didRetranscribe = useAppStore((state) =>
+    transcription?.id
+      ? state.transcriptions.retranscriptionSuccessIds.includes(
+          transcription.id,
+        )
       : false,
   );
 
@@ -415,7 +424,15 @@ export const TranscriptionDetailsDialog = () => {
       </DialogContent>
       <DialogActions>
         <Button
-          startIcon={<ReplayRoundedIcon />}
+          startIcon={
+            isRetranscribing ? (
+              <CircularProgress size={16} color="inherit" />
+            ) : didRetranscribe ? (
+              <CheckCircleRoundedIcon color="success" />
+            ) : (
+              <ReplayRoundedIcon />
+            )
+          }
           onClick={() => {
             if (transcription?.id) {
               closeTranscriptionDetailsDialog();

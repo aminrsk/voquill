@@ -6,7 +6,6 @@ import {
   installAvailableUpdate as pkgInstallAvailableUpdate,
   isReadOnlyFilesystemInstallError,
   relaunchApp,
-  shouldSurfaceUpdate,
 } from "@voquill/desktop-utils";
 import { getIntl } from "../i18n/intl";
 import { getAppState, produceAppState } from "../store";
@@ -77,12 +76,7 @@ export const checkForAppUpdates = async (): Promise<boolean> => {
     const { dialogOpen, dismissedUntil } = state.updater;
     const ignoreUpdateDialog =
       getMyUserPreferences(state)?.ignoreUpdateDialog ?? false;
-    const isUpdateSurfaced = shouldSurfaceUpdate(
-      update.releaseDate,
-      state.local.optInToBetaUpdates,
-    );
     const shouldAutoShowDialog =
-      isUpdateSurfaced &&
       !ignoreUpdateDialog &&
       !dialogOpen &&
       (!dismissedUntil || Date.now() >= dismissedUntil);

@@ -21,6 +21,7 @@ import {
 } from "../../actions/transcriptions.actions";
 import { produceAppState, useAppStore } from "../../store";
 import {
+  AUTO_LANGUAGE,
   DICTATION_LANGUAGES,
   type DictationLanguageCode,
   ORDERED_DICTATION_LANGUAGES,
@@ -28,10 +29,17 @@ import {
 import { getSortedToneIds } from "../../utils/tone.utils";
 import { getMyDictationLanguage } from "../../utils/user.utils";
 
-const languageOptions = ORDERED_DICTATION_LANGUAGES.map((code) => ({
+const languageOptions = (
+  [
+    AUTO_LANGUAGE,
+    ...ORDERED_DICTATION_LANGUAGES,
+  ] satisfies DictationLanguageCode[]
+).map((code) => ({
   code,
   label: DICTATION_LANGUAGES[code],
 }));
+
+const SUCCESS_VISIBLE_DELAY_MS = 900;
 
 export const RetranscribeDialog = () => {
   const intl = useIntl();
@@ -63,23 +71,32 @@ export const RetranscribeDialog = () => {
     }
   }, [open, defaultLanguage, tones]);
 
+  const handleClose = useCallback(() => {
+    closeRetranscribeDialog();
+  }, []);
+
   const handleSubmit = useCallback(async () => {
     if (!transcriptionId) return;
 
     closeRetranscribeDialog();
-
     produceAppState((draft) => {
       if (!draft.transcriptions.retranscribingIds.includes(transcriptionId)) {
         draft.transcriptions.retranscribingIds.push(transcriptionId);
       }
+      draft.transcriptions.retranscriptionSuccessIds =
+        draft.transcriptions.retranscriptionSuccessIds.filter(
+          (id) => id !== transcriptionId,
+        );
     });
 
+    let didSucceed = false;
     try {
       await retranscribeTranscription({
         transcriptionId,
         toneId: selectedToneId,
         languageCode: selectedLanguage,
       });
+      didSucceed = true;
     } catch (error) {
       console.error("Failed to retranscribe audio", error);
       const fallbackMessage = intl.formatMessage({
@@ -93,17 +110,30 @@ export const RetranscribeDialog = () => {
           draft.transcriptions.retranscribingIds.filter(
             (id) => id !== transcriptionId,
           );
+        if (
+          didSucceed &&
+          !draft.transcriptions.retranscriptionSuccessIds.includes(
+            transcriptionId,
+          )
+        ) {
+          draft.transcriptions.retranscriptionSuccessIds.push(transcriptionId);
+        }
       });
+      if (didSucceed) {
+        window.setTimeout(() => {
+          produceAppState((draft) => {
+            draft.transcriptions.retranscriptionSuccessIds =
+              draft.transcriptions.retranscriptionSuccessIds.filter(
+                (id) => id !== transcriptionId,
+              );
+          });
+        }, SUCCESS_VISIBLE_DELAY_MS);
+      }
     }
   }, [transcriptionId, selectedToneId, selectedLanguage, intl]);
 
   return (
-    <Dialog
-      open={open}
-      onClose={closeRetranscribeDialog}
-      maxWidth="xs"
-      fullWidth
-    >
+    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
       <DialogTitle>
         <FormattedMessage defaultMessage="Retranscribe" />
       </DialogTitle>
@@ -150,7 +180,7 @@ export const RetranscribeDialog = () => {
         </Stack>
       </DialogContent>
       <DialogActions>
-        <Button onClick={closeRetranscribeDialog}>
+        <Button onClick={handleClose}>
           <FormattedMessage defaultMessage="Cancel" />
         </Button>
         <Button variant="contained" onClick={handleSubmit}>
