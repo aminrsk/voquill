@@ -7,6 +7,12 @@ on:
     paths:
       - "apps/desktop/**"
       - "packages/**"
+      # A lockfile change can alter any dependency in the workspace, so it
+      # must trigger this gate. Without these two lines no workflow matched a
+      # Dependabot PR at all, and five security PRs sat with "no checks
+      # reported" and therefore nothing to merge them against.
+      - "pnpm-lock.yaml"
+      - "package.json"
       - ".github/workflows/test-desktop-unit.yml"
 
 jobs:
